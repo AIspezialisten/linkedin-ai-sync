@@ -8,7 +8,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     curl \
     git \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js for the official Playwright MCP server
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
 
 # Install uv (fast Python package manager)
 RUN pip install uv
@@ -18,6 +23,9 @@ COPY pyproject.toml uv.lock ./
 
 # Install Python dependencies using uv
 RUN uv sync --frozen
+
+# Install the official Playwright MCP server
+RUN npm install -g @playwright/mcp
 
 # Copy application code
 COPY . .

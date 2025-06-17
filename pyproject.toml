@@ -12,6 +12,8 @@ dependencies = [
     "click>=8.0.0",
     "pydantic-ai>=0.2.0",
     "ollama>=0.5.0",
+    "dedupe>=3.0.3",
+    "unidecode>=1.4.0",
 ]
 
 [project.optional-dependencies]

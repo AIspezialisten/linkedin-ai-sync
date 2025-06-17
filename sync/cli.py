@@ -367,5 +367,94 @@ def test_dynamics(ctx):
     asyncio.run(run_test())
 
 
+@cli.command()
+def test_playwright():
+    """Test official Playwright MCP server functionality."""
+    import subprocess
+    import sys
+    
+    click.echo("🎭 Testing Official Playwright MCP Server...")
+    
+    try:
+        # Run the Playwright test script
+        script_path = Path(__file__).parent.parent / "test_playwright_official.py"
+        result = subprocess.run([
+            sys.executable, str(script_path)
+        ], capture_output=True, text=True)
+        
+        click.echo(result.stdout)
+        
+        if result.stderr:
+            click.echo("Errors:", nl=False)
+            click.echo(result.stderr)
+        
+        if result.returncode == 0:
+            click.echo("✓ Playwright MCP server test completed successfully")
+        else:
+            click.echo("✗ Playwright MCP server test failed")
+            
+    except Exception as e:
+        click.echo(f"✗ Failed to run Playwright test: {str(e)}")
+
+
+@cli.command()
+def mcp_status():
+    """Show status of all MCP servers."""
+    import subprocess
+    import sys
+    
+    try:
+        script_path = Path(__file__).parent.parent / "services/mcp_manager.py"
+        result = subprocess.run([
+            sys.executable, str(script_path), "status"
+        ], capture_output=True, text=True)
+        
+        click.echo(result.stdout)
+        
+        if result.stderr:
+            click.echo("Errors:", nl=False) 
+            click.echo(result.stderr)
+            
+    except Exception as e:
+        click.echo(f"✗ Failed to get MCP server status: {str(e)}")
+
+
+@cli.command()
+@click.option('--max-profiles', type=int, help='Maximum number of profiles to scrape')
+@click.option('--delay', type=float, default=3.0, help='Delay between profile scrapes in seconds')
+def scrape_profiles(max_profiles: Optional[int], delay: float):
+    """Scrape detailed LinkedIn profile data using AI and Playwright MCP."""
+    import subprocess
+    import sys
+    
+    click.echo("🤖 Starting AI-powered LinkedIn profile scraping...")
+    
+    if max_profiles:
+        click.echo(f"📊 Limited to {max_profiles} profiles")
+    
+    click.echo(f"⏱️ Delay between scrapes: {delay} seconds")
+    
+    try:
+        # Set environment variables for the scraper
+        env = os.environ.copy()
+        if max_profiles:
+            env['SCRAPER_MAX_PROFILES'] = str(max_profiles)
+        env['SCRAPER_DELAY'] = str(delay)
+        
+        # Run the scraper
+        script_path = Path(__file__).parent.parent / "linkedin_profile_scraper.py"
+        result = subprocess.run([
+            sys.executable, str(script_path)
+        ], env=env, capture_output=False, text=True)
+        
+        if result.returncode == 0:
+            click.echo("✓ Profile scraping completed successfully")
+        else:
+            click.echo("✗ Profile scraping failed")
+            
+    except Exception as e:
+        click.echo(f"✗ Failed to run profile scraper: {str(e)}")
+
+
 if __name__ == '__main__':
     cli()

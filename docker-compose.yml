@@ -19,6 +19,17 @@ services:
       - OLLAMA_MODEL=mistral-small:24b
       - OLLAMA_HOST=http://ollama:11434
       - OPENAI_API_KEY=ollama
+      
+      # MCP Server Configuration
+      - MCP_LINKEDIN_PORT=8001
+      - MCP_DYNAMICS_PORT=8002
+      - MCP_PLAYWRIGHT_PORT=8003
+    ports:
+      # Expose MCP server ports
+      - "8001:8001"  # LinkedIn MCP Server
+      - "8002:8002"  # Dynamics CRM MCP Server
+      - "8003:8003"  # Playwright MCP Server
+      - "8000:8000"  # Main application port
     depends_on:
       ollama:
         condition: service_healthy

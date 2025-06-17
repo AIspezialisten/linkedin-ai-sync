@@ -56,9 +56,13 @@ The Docker setup includes three services:
 
 ### 📱 `linkedin-sync` 
 - Main application container
-- Python 3.11 with uv package manager
+- Python 3.11 with uv package manager and Node.js
 - Contains all LinkedIn-CRM sync logic
 - AI duplicate detection system
+- Runs multiple MCP servers:
+  - LinkedIn MCP Server (port 8001)
+  - Microsoft Dynamics CRM MCP Server (port 8002)
+  - Official Playwright MCP Server (port 8003)
 
 ### 🤖 `ollama`
 - Ollama AI model server
@@ -91,6 +95,9 @@ docker-compose exec linkedin-sync uv run linkedin-sync test-connectivity
 # Test AI duplicate detection
 docker-compose exec linkedin-sync uv run linkedin-sync test-ai-detection
 
+# Test Playwright web automation
+docker-compose exec linkedin-sync uv run linkedin-sync test-playwright
+
 # List LinkedIn contacts
 docker-compose exec linkedin-sync uv run python count_connections.py
 
@@ -99,6 +106,9 @@ docker-compose exec linkedin-sync uv run python list_crm_contacts_simple.py
 
 # Show AI duplicate detection example
 docker-compose exec linkedin-sync uv run python show_duplicate_details.py
+
+# Check MCP server status
+docker-compose exec linkedin-sync uv run linkedin-sync mcp-status
 ```
 
 ### Monitor AI Model Download

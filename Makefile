@@ -59,6 +59,10 @@ test-ai: ## Test AI duplicate detection
 	@echo "🤖 Testing AI duplicate detection..."
 	docker-compose exec linkedin-sync uv run linkedin-sync test-ai-detection
 
+test-playwright: ## Test Playwright MCP server
+	@echo "🎭 Testing Playwright MCP server..."
+	docker-compose exec linkedin-sync uv run linkedin-sync test-playwright
+
 test-linkedin: ## List LinkedIn contacts
 	@echo "📱 Listing LinkedIn contacts..."
 	docker-compose exec linkedin-sync uv run python count_connections.py
@@ -70,6 +74,18 @@ test-crm: ## List CRM contacts
 demo: ## Show AI duplicate detection demo
 	@echo "🎯 Running AI duplicate detection demo..."
 	docker-compose exec linkedin-sync uv run python show_duplicate_details.py
+
+mcp-status: ## Show MCP server status
+	@echo "🤖 Checking MCP server status..."
+	docker-compose exec linkedin-sync uv run linkedin-sync mcp-status
+
+scrape-profiles: ## Scrape LinkedIn profiles with AI (interactive)
+	@echo "🕷️ Starting AI-powered LinkedIn profile scraping..."
+	docker-compose exec linkedin-sync uv run linkedin-sync scrape-profiles
+
+scrape-sample: ## Scrape first 5 LinkedIn profiles for testing
+	@echo "🧪 Scraping first 5 profiles for testing..."
+	docker-compose exec linkedin-sync uv run linkedin-sync scrape-profiles --max-profiles 5 --delay 2.0
 
 # 🛠️ Development
 shell: ## Open interactive shell in main container

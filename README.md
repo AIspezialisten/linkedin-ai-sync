@@ -12,7 +12,7 @@
 - **CLI Interface**: Easy-to-use command-line tools
 - **Docker Support**: Complete containerized setup with docker-compose
 
-## =€ Quick Start Options
+## =ï¿½ Quick Start Options
 
 ### Option 1: Docker (Recommended)
 
@@ -73,17 +73,20 @@ docker-compose exec linkedin-sync bash
 
 ### Architecture
 
-- **`linkedin-sync`**: Main application container
+- **`linkedin-sync`**: Main application container with MCP servers
+  - LinkedIn MCP Server (port 8001)
+  - Microsoft Dynamics CRM MCP Server (port 8002)  
+  - Official Playwright MCP Server (port 8003)
 - **`ollama`**: AI model server (mistral-small:24b)
 - **`model-downloader`**: Downloads AI model on first run
 
-## =Ú Documentation
+## =ï¿½ Documentation
 
 - **`README.Docker.md`**: Complete Docker setup guide
 - **`CLAUDE.md`**: Detailed development documentation
 - **`Makefile`**: Quick command reference
 
-## <¯ Example AI Duplicate Detection
+## <ï¿½ Example AI Duplicate Detection
 
 The system can intelligently detect duplicates like this:
 
@@ -107,7 +110,7 @@ The system can intelligently detect duplicates like this:
 4. Test with `make test`
 5. Submit a pull request
 
-## =Ä License
+## =ï¿½ License
 
 This project is licensed under the MIT License.
 

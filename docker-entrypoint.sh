@@ -33,17 +33,43 @@ else
     echo "    You can check progress with: docker-compose logs model-downloader"
 fi
 
+# Start MCP Server Manager in background
+echo "🤖 Starting MCP Server Manager..."
+python /app/services/mcp_manager.py &
+MCP_MANAGER_PID=$!
+
+# Give MCP servers time to start
+echo "⏳ Waiting for MCP servers to initialize..."
+sleep 5
+
+# Check MCP server status
+echo "📊 MCP Server Status:"
+python /app/services/mcp_manager.py status
+
+echo ""
 echo "🎯 LinkedIn-CRM AI Sync System is ready!"
 echo ""
 echo "Available commands:"
 echo "  🧪 Test connectivity:     uv run linkedin-sync test-connectivity"
-echo "  🤖 Test AI detection:     uv run linkedin-sync test-ai-detection"  
+echo "  🤖 Test AI detection:     uv run linkedin-sync test-ai-detection"
+echo "  🎭 Test Playwright:       uv run linkedin-sync test-playwright"
 echo "  📊 List LinkedIn contacts: uv run python count_connections.py"
 echo "  📋 List CRM contacts:     uv run python list_crm_contacts_simple.py"
 echo "  🔄 Show duplicate example: uv run python show_duplicate_details.py"
+echo "  🕷️ Scrape profiles (AI):   uv run linkedin-sync scrape-profiles"
+echo "  📈 View scraped data:     uv run python view_scraped_profiles.py"
+echo "  🌐 MCP server status:     uv run linkedin-sync mcp-status"
 echo ""
 echo "For help: uv run linkedin-sync --help"
 echo ""
+
+# Setup cleanup trap
+cleanup() {
+    echo "🧹 Cleaning up MCP servers..."
+    kill $MCP_MANAGER_PID 2>/dev/null || true
+    wait $MCP_MANAGER_PID 2>/dev/null || true
+}
+trap cleanup EXIT
 
 # Execute the command passed to the script
 exec "$@"
