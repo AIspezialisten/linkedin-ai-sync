@@ -18,3 +18,12 @@ wheels/
 
 # AI analysis results
 ai_duplicate_analysis_results.json
+
+# Docker
+.docker/
+docker-compose.override.yml
+.dockerignore.bak
+
+# Application data
+data/
+logs/
