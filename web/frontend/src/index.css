@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn bg-linkedin-600 text-white hover:bg-linkedin-700 focus:ring-linkedin-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+
+  .btn-success {
+    @apply btn bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+  }
+
+  .card {
+    @apply bg-white rounded-lg shadow-md border border-gray-200;
+  }
+
+  .confidence-badge {
+    @apply px-2 py-1 rounded-full text-xs font-medium;
+  }
+
+  .confidence-high {
+    @apply confidence-badge bg-green-100 text-green-800;
+  }
+
+  .confidence-medium {
+    @apply confidence-badge bg-yellow-100 text-yellow-800;
+  }
+
+  .confidence-low {
+    @apply confidence-badge bg-red-100 text-red-800;
+  }
+
+  .confidence-none {
+    @apply confidence-badge bg-gray-100 text-gray-800;
+  }
+}

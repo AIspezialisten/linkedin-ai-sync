@@ -14,6 +14,11 @@ dependencies = [
     "ollama>=0.5.0",
     "dedupe>=3.0.3",
     "unidecode>=1.4.0",
+    "playwright>=1.52.0",
+    "python-mcp>=1.0.1",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sqlalchemy>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -26,13 +31,14 @@ dev = [
 
 [project.scripts]
 linkedin-sync = "sync.cli:cli"
+linkedin-web = "web.start_server:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["mcp_servers", "sync"]
+packages = ["mcp_servers", "sync", "web"]
 
 [tool.uv]
 dev-dependencies = [

@@ -20,6 +20,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from sync.synchronizer import SyncOrchestrator
+from sync.web_integration import WebSyncOrchestrator
 
 
 class MockMCPClient:
@@ -368,31 +369,106 @@ def test_dynamics(ctx):
 
 
 @cli.command()
+@click.option('--keywords', help='Keywords to filter connections')
+@click.option('--limit', default=50, help='Maximum number of connections to sync')
+@click.option('--dry-run', is_flag=True, help='Perform a dry run without making changes')
+@click.option('--ai-detection/--no-ai-detection', default=True, help='Use AI for duplicate detection')
+@click.option('--auto-sync/--no-auto-sync', default=False, help='Automatically sync contacts deemed safe by AI')
+@click.option('--ollama-model', help='Ollama model for AI duplicate detection')
+@click.pass_context
+def sync_with_web_review(ctx, keywords: Optional[str], limit: int, dry_run: bool,
+                       ai_detection: bool, auto_sync: bool, ollama_model: Optional[str]):
+    """Synchronize LinkedIn connections with web interface for duplicate review."""
+    logger = ctx.obj['logger']
+
+    if ai_detection:
+        logger.info(f"AI duplicate detection enabled using {ollama_model or os.getenv('OLLAMA_MODEL', 'mistral-small:24b')}")
+
+    async def run_sync():
+        # Mock clients for testing
+        linkedin_client = MockMCPClient("linkedin")
+        dynamics_client = MockMCPClient("dynamics")
+
+        orchestrator = WebSyncOrchestrator(linkedin_client, dynamics_client, logger)
+
+        if dry_run:
+            click.echo(f"DRY RUN: Would synchronize {limit} connections with web review" +
+                      (f" with keywords '{keywords}'" if keywords else ""))
+            click.echo(f"  AI detection: {'enabled' if ai_detection else 'disabled'}")
+            click.echo(f"  Auto-sync safe contacts: {'yes' if auto_sync else 'no'}")
+            return
+
+        click.echo(f"Synchronizing LinkedIn connections with web interface...")
+        if keywords:
+            click.echo(f"  Keywords: {keywords}")
+        click.echo(f"  Limit: {limit}")
+        click.echo(f"  AI detection: {'enabled' if ai_detection else 'disabled'}")
+        click.echo(f"  Auto-sync safe contacts: {'yes' if auto_sync else 'no'}")
+
+        try:
+            stats, results, ai_analysis = await orchestrator.sync_connections_with_web_review(
+                keywords=keywords,
+                limit=limit,
+                auto_sync_safe_contacts=auto_sync
+            )
+
+            # Display results
+            click.echo(f"\nSynchronization with web review completed:")
+            click.echo(f"  Total processed: {stats.total_processed}")
+            click.echo(f"  Auto-synced: {stats.created + stats.updated}")
+            click.echo(f"  Stored for web review: {len(ai_analysis.get('duplicate_details', {}))}")
+            click.echo(f"  Skipped: {stats.skipped}")
+            click.echo(f"  Errors: {stats.errors}")
+
+            if ai_analysis.get('duplicate_details'):
+                click.echo(f"\n📝 Duplicates stored for web review:")
+                for contact_name, matches in ai_analysis['duplicate_details'].items():
+                    for match in matches:
+                        if match.confidence.value in ['high', 'medium']:
+                            click.echo(f"  • {contact_name} vs {match.crm_contact.get('fullname', 'Unknown')} "
+                                     f"({match.confidence.value} confidence)")
+
+                click.echo(f"\n🌐 Visit the web interface to review duplicates: http://localhost:8000")
+
+            if ctx.obj['verbose']:
+                click.echo(f"\nDetailed results:")
+                for result in results:
+                    click.echo(f"  {result.action}: {result.message}")
+
+        except Exception as e:
+            logger.error(f"Synchronization failed: {str(e)}")
+            click.echo(f"Error: {str(e)}", err=True)
+            sys.exit(1)
+
+    asyncio.run(run_sync())
+
+
+@cli.command()
 def test_playwright():
     """Test official Playwright MCP server functionality."""
     import subprocess
     import sys
-    
+
     click.echo("🎭 Testing Official Playwright MCP Server...")
-    
+
     try:
         # Run the Playwright test script
         script_path = Path(__file__).parent.parent / "test_playwright_official.py"
         result = subprocess.run([
             sys.executable, str(script_path)
         ], capture_output=True, text=True)
-        
+
         click.echo(result.stdout)
-        
+
         if result.stderr:
             click.echo("Errors:", nl=False)
             click.echo(result.stderr)
-        
+
         if result.returncode == 0:
             click.echo("✓ Playwright MCP server test completed successfully")
         else:
             click.echo("✗ Playwright MCP server test failed")
-            
+
     except Exception as e:
         click.echo(f"✗ Failed to run Playwright test: {str(e)}")
 

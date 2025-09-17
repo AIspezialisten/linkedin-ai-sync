@@ -15,6 +15,7 @@ wheels/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.backup.*
 
 # AI analysis results
 ai_duplicate_analysis_results.json
@@ -27,3 +28,73 @@ docker-compose.override.yml
 # Application data
 data/
 logs/
+
+# Web interface - React frontend
+web/frontend/node_modules/
+web/frontend/build/
+web/frontend/npm-debug.log*
+web/frontend/yarn-debug.log*
+web/frontend/yarn-error.log*
+web/frontend/.env.local
+web/frontend/.env.development.local
+web/frontend/.env.test.local
+web/frontend/.env.production.local
+
+# Web interface - Database and logs
+*.db
+*.sqlite
+*.sqlite3
+duplicates.db
+web_server.log
+*.log
+
+# Web interface - Temporary files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/

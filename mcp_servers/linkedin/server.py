@@ -77,7 +77,7 @@ class LinkedInMCPServer:
             tools=[
                 Tool(
                     name="get_member_snapshot_data",
-                    description="Retrieve member snapshot data from LinkedIn Member Data Portability API",
+                    description="Retrieve member snapshot data from LinkedIn Member Data Portability API with pagination support",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -85,16 +85,42 @@ class LinkedInMCPServer:
                                 "type": "string",
                                 "description": "Data domain to query (e.g., 'CONNECTIONS', 'PROFILE')",
                                 "default": "CONNECTIONS"
+                            },
+                            "start": {
+                                "type": "integer",
+                                "description": "Starting offset for pagination",
+                                "default": 0
+                            },
+                            "count": {
+                                "type": "integer",
+                                "description": "Number of items to return per page",
+                                "default": 200
                             }
                         }
                     }
                 ),
                 Tool(
                     name="get_connections_data",
-                    description="Get LinkedIn connections data specifically",
+                    description="Get LinkedIn connections data with pagination support",
                     inputSchema={
                         "type": "object",
-                        "properties": {}
+                        "properties": {
+                            "all_paginated": {
+                                "type": "boolean",
+                                "description": "Whether to fetch all connections using pagination",
+                                "default": False
+                            },
+                            "start": {
+                                "type": "integer",
+                                "description": "Starting offset for pagination (ignored if all_paginated=true)",
+                                "default": 0
+                            },
+                            "count": {
+                                "type": "integer",
+                                "description": "Number of items to return per page",
+                                "default": 200
+                            }
+                        }
                     }
                 )
             ]
@@ -120,8 +146,10 @@ class LinkedInMCPServer:
             )
 
     async def _get_member_snapshot_data(self, args: Dict[str, Any]) -> CallToolResult:
-        """Retrieve LinkedIn member snapshot data using the Member Snapshot Data API."""
+        """Retrieve LinkedIn member snapshot data using the Member Snapshot Data API with pagination."""
         domain = args.get("domain", "CONNECTIONS")
+        start = args.get("start", 0)
+        count = args.get("count", 200)
         
         headers = {
             "Authorization": f"Bearer {self.config.access_token}",
@@ -129,11 +157,13 @@ class LinkedInMCPServer:
             "Content-Type": "application/json"
         }
         
-        # LinkedIn Member Snapshot Data API endpoint (the one that works)
+        # LinkedIn Member Snapshot Data API endpoint with pagination
         url = f"{self.config.base_url}/rest/memberSnapshotData"
         params = {
             "q": "criteria",
-            "domain": domain
+            "domain": domain,
+            "start": start,
+            "count": count
         }
         
         response = await self.client.get(url, headers=headers, params=params)
@@ -149,42 +179,113 @@ class LinkedInMCPServer:
         )
 
     async def _get_connections_data(self, args: Dict[str, Any]) -> CallToolResult:
-        """Get LinkedIn connections data specifically."""
+        """Get LinkedIn connections data specifically with pagination support."""
+        all_paginated = args.get("all_paginated", False)
+        start = args.get("start", 0)
+        count = args.get("count", 200)
+        
         headers = {
             "Authorization": f"Bearer {self.config.access_token}",
             "LinkedIn-Version": self.config.api_version,
             "Content-Type": "application/json"
         }
         
-        # LinkedIn Member Snapshot Data API for connections
-        url = f"{self.config.base_url}/rest/memberSnapshotData"
-        params = {
-            "q": "criteria",
-            "domain": "CONNECTIONS"
-        }
-        
-        response = await self.client.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        # Extract connections from the response
-        connections = []
-        if "elements" in data:
-            for element in data["elements"]:
-                if "memberConnections" in element:
-                    connections.extend(element["memberConnections"].get("elements", []))
-        
-        return CallToolResult(
-            content=[TextContent(
-                type="text",
-                text=json.dumps({
-                    "connections": connections,
-                    "total_count": len(connections),
-                    "raw_response": data
-                }, indent=2)
-            )]
-        )
+        if all_paginated:
+            # Fetch all connections using pagination
+            all_connections = []
+            current_start = 0
+            page_num = 1
+            
+            while True:
+                # LinkedIn Member Snapshot Data API for connections with pagination
+                url = f"{self.config.base_url}/rest/memberSnapshotData"
+                params = {
+                    "q": "criteria",
+                    "domain": "CONNECTIONS",
+                    "start": current_start,
+                    "count": count
+                }
+                
+                response = await self.client.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                # Extract connections from this page
+                page_connections = []
+                if "elements" in data:
+                    for element in data["elements"]:
+                        if "snapshotData" in element:
+                            page_connections = element["snapshotData"]
+                            break
+                
+                # If no connections found on this page, we're done
+                if not page_connections:
+                    break
+                
+                # Add connections from this page
+                all_connections.extend(page_connections)
+                
+                # If we got fewer connections than requested, we've reached the end
+                if len(page_connections) < count:
+                    break
+                
+                # Prepare for next page
+                current_start += count
+                page_num += 1
+                
+                # Add a small delay between API calls to be respectful
+                await asyncio.sleep(1.0)
+            
+            return CallToolResult(
+                content=[TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "connections": all_connections,
+                        "total_count": len(all_connections),
+                        "pages_fetched": page_num,
+                        "pagination_complete": True
+                    }, indent=2)
+                )]
+            )
+        else:
+            # Single page request
+            url = f"{self.config.base_url}/rest/memberSnapshotData"
+            params = {
+                "q": "criteria",
+                "domain": "CONNECTIONS",
+                "start": start,
+                "count": count
+            }
+            
+            response = await self.client.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Extract connections from the response
+            connections = []
+            if "elements" in data:
+                for element in data["elements"]:
+                    if "snapshotData" in element:
+                        connections = element["snapshotData"]
+                        break
+            
+            return CallToolResult(
+                content=[TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "connections": connections,
+                        "total_count": len(connections),
+                        "raw_response": data,
+                        "pagination_info": {
+                            "start": start,
+                            "count": count,
+                            "returned": len(connections)
+                        }
+                    }, indent=2)
+                )]
+            )
 
     async def cleanup(self):
         """Clean up resources."""

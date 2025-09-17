@@ -1,490 +1,764 @@
 """
-Custom Playwright MCP Server with LinkedIn cookies pre-configured.
+Simplified Playwright automation server with LinkedIn cookies.
 
-This server extends the basic Playwright functionality to automatically
-include LinkedIn authentication cookies for seamless LinkedIn automation.
+This provides a simple JSON-based API for LinkedIn profile scraping
+with automatic cookie injection.
 """
 
 import asyncio
 import json
 import logging
+import os
+import sys
 from typing import Any, Dict, List, Optional
-from pathlib import Path
+from dotenv import load_dotenv
 
-from mcp.server import Server
-from mcp.types import Tool, TextContent
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
-# LinkedIn cookies for authentication
-LINKEDIN_COOKIES = [
-    {"domain": ".linkedin.com", "expirationDate": 1781728252.04868, "hostOnly": False, "httpOnly": False, "name": "bcookie", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "\"v=2&09c343a7-5ea8-41b1-8ba2-53c8f0055dda\""},
-    {"domain": ".linkedin.com", "expirationDate": 1764485137.459191, "hostOnly": False, "httpOnly": False, "name": "li_gc", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "MTswOzE3NDg5MzMxMzY7MjswMjHlv/s4qfh28Ka4j+xiOZrMxst9tUXVu9IBqvDB1818zQ=="},
-    {"domain": ".www.linkedin.com", "expirationDate": 1781728252.048789, "hostOnly": False, "httpOnly": True, "name": "bscookie", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "\"v=1&20250603064537b205a416-432a-410c-89f6-f2c635f30a3eAQF70u1jfZyLe6tYUD9Rqa-QHJzQsa-B\""},
-    {"domain": "www.linkedin.com", "expirationDate": 1781726921, "hostOnly": True, "httpOnly": False, "name": "li_alerts", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "e30="},
-    {"domain": "www.linkedin.com", "expirationDate": 1764485227, "hostOnly": True, "httpOnly": False, "name": "g_state", "path": "/", "sameSite": "unspecified", "secure": False, "session": False, "storeId": "0", "value": "{\"i_l\":0}"},
-    {"domain": ".www.linkedin.com", "expirationDate": 1751401852, "hostOnly": False, "httpOnly": False, "name": "timezone", "path": "/", "sameSite": "unspecified", "secure": True, "session": False, "storeId": "0", "value": "Europe/Berlin"},
-    {"domain": ".www.linkedin.com", "expirationDate": 1765747852, "hostOnly": False, "httpOnly": False, "name": "li_theme", "path": "/", "sameSite": "unspecified", "secure": True, "session": False, "storeId": "0", "value": "light"},
-    {"domain": ".www.linkedin.com", "expirationDate": 1765747852, "hostOnly": False, "httpOnly": False, "name": "li_theme_set", "path": "/", "sameSite": "unspecified", "secure": True, "session": False, "storeId": "0", "value": "app"},
-    {"domain": ".linkedin.com", "expirationDate": 1780469231.894047, "hostOnly": False, "httpOnly": True, "name": "dfpfpt", "path": "/", "sameSite": "unspecified", "secure": True, "session": False, "storeId": "0", "value": "c732bad30cf744549900eaeafb6f06ff"},
-    {"domain": ".linkedin.com", "hostOnly": False, "httpOnly": True, "name": "fptctx2", "path": "/", "sameSite": "unspecified", "secure": True, "session": True, "storeId": "0", "value": "taBcrIH61PuCVH7eNCyH0FC0izOzUpX5wN2Z%252b5egc%252f5DUzJHCEe5tD6MVX95Q25smbO4Cnw70HdVp7DWLtin93YJeF6lzAsnB8BmItl%252bHcIt2p%252buE3f%252f1oh0BRRlKIcHbUk5cH0AJedLyQGtMa08LySMedfi%252bbmJbUM9MWzYOjII91iLgY%252bFolXo3n05kU6%252bTHdPQq%252fcRHOj%252fdGFepJAecRrVUh2xiUHjxpnrpHvwirZCke5Fz2DdvGPGnt3WFcLq%252b9QGbb1%252fn3Ur68KOZdgu4x%252ftM%252bPoWLpXXdYCXPu%252f3yG%252fxnQZISdJr8ZEndgYrye5IllY9EYIgJK57MRD87CVz%252f42qoNbxRH3Yf1a3boUnM%253d"},
-    {"domain": ".www.linkedin.com", "expirationDate": 1781726953.676794, "hostOnly": False, "httpOnly": True, "name": "li_rm", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "AQHoeHwRq8C30gAAAZd_ghE_Pf1aYjTT-r2JKmE04W7rucOb3tVQJpZkbwg73hOH6IXB5Fc5eyAfXUG2ceaNrg2gSICE8iosLbGqosZTyNGjNaiMUG_wPhVFqp32e8FzTsDR_tFOZZrINjsJRex5ffnKw3hs0GKcX9OgeDjBPuNdeNqtu4vs0J0eYF3bLcBy8CeWts4kiAMb_IhlymR9YOF6-GecQCN80RstpU0dXXdntQ4nZut3z38DlPQ21fLhnYhDGvdi20N-PfQ4RkjRZoh08GBo3xjOfcJYTSGS1vO6-M79dM1e1II8CJgVTgaty5LIVMB6tPtDNBYiqmbS1w"},
-    {"domain": "www.linkedin.com", "expirationDate": 1750194520.184038, "hostOnly": True, "httpOnly": False, "name": "li_g_recent_logout", "path": "/", "sameSite": "unspecified", "secure": False, "session": False, "storeId": "0", "value": "v=1&true"},
-    {"domain": ".linkedin.com", "expirationDate": 1784750920.184463, "hostOnly": False, "httpOnly": False, "name": "visit", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "v=1&M"},
-    {"domain": ".www.linkedin.com", "expirationDate": 1757966953.677251, "hostOnly": False, "httpOnly": False, "name": "JSESSIONID", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "\"ajax:5746800555694694412\""},
-    {"domain": ".www.linkedin.com", "expirationDate": 1781726953.677146, "hostOnly": False, "httpOnly": True, "name": "li_at", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "AQEDAR3oGXYBc8GCAAABl3-ClRoAAAGXo48ZGk4AL3IqMQpmwg2R5Exj5x0BNRMdqMcJTKqN86geVul8xE8ZRrRHEKbaaIXKEWTcW8mbDyyStoeO86WgZUlgbUczR0umLSnCVOZ0-xCiwxhRVunjnZd8"},
-    {"domain": ".linkedin.com", "expirationDate": 1757966953.677202, "hostOnly": False, "httpOnly": False, "name": "liap", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "true"},
-    {"domain": ".linkedin.com", "expirationDate": 1750249630.992858, "hostOnly": False, "httpOnly": False, "name": "lidc", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "\"b=TB34:s=T:r=T:a=T:p=T:g=4465:u=501:x=1:i=1750190954:t=1750249631:v=2:sig=AQH_q0Fyyj_ugqKS2filk1mLofZn4sxe\""},
-    {"domain": ".linkedin.com", "expirationDate": 1750193956.135587, "hostOnly": False, "httpOnly": True, "name": "__cf_bm", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "T11XAZgoJ1kTJyywIbYmilOH2_VprX_RZwN1tNgRd5g-1750192156-1.0.1.1-fOtOp3vzkbD.d7kxuOHmKjq2AIv_BlzL4l4WvZOIg9_iHJDOJwLyQ7iV.e5WslDttz7B0XcrTZH8NEbTzd1w_MvVrZLPutC6iVmISqQDE9E"},
-    {"domain": ".linkedin.com", "expirationDate": 1765744216.104882, "hostOnly": False, "httpOnly": False, "name": "li_mc", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "MTsyMTsxNzUwMTkyMjE2OzI7MDIxW/xgxaeFs0wlu29xDv9Gc+sx3kAK+052IMHCGjgI91Y="},
-    {"domain": ".linkedin.com", "hostOnly": False, "httpOnly": False, "name": "lang", "path": "/", "sameSite": "no_restriction", "secure": True, "session": True, "storeId": "0", "value": "v=2&lang=de-de"},
-    {"domain": ".linkedin.com", "expirationDate": 1752784256, "hostOnly": False, "httpOnly": False, "name": "UserMatchHistory", "path": "/", "sameSite": "no_restriction", "secure": True, "session": False, "storeId": "0", "value": "AQKWInDv6-71MwAAAZd_lnLSaJ7lmtjBw1lBmOTmMxVrJ80vf0qugL-9avXQEcrhqaMz6KnjoHCyfODpUC3kcmlXzMNsYpWi3HsAfvmvnJ-O3czk9wFht84jLxV-ZpP7mvGMW2n2gzCVGa7RorCavYV9EOw7GarIQmiVWwjQ4_ovlnQeEJIIkPQEJTbVDwgOi73BE2jZZiyOgTw2y_mPa66-Y14_0wkRPOrYuYaIeSkm7pPF74KCxKfoNE8EFOOg0cFfG0SOsbaJbOPwhgLgI-r5fipV1zKw_i7AAdy0T-3VEGOMYA"}
-]
+# Load environment variables
+load_dotenv()
+
+def load_linkedin_cookies() -> List[Dict[str, Any]]:
+    """Load LinkedIn cookies from environment variable."""
+    cookies_env = os.getenv('LINKEDIN_COOKIES')
+    if not cookies_env:
+        raise ValueError(
+            "LINKEDIN_COOKIES environment variable is required. "
+            "Please export your LinkedIn cookies from your browser and add them to the .env file."
+        )
+    
+    try:
+        cookies = json.loads(cookies_env)
+        if not isinstance(cookies, list):
+            raise ValueError("LINKEDIN_COOKIES must be a JSON array of cookie objects")
+        
+        logging.getLogger(__name__).info(f"✅ Loaded {len(cookies)} LinkedIn cookies from environment")
+        return cookies
+        
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in LINKEDIN_COOKIES: {str(e)}")
+    except Exception as e:
+        raise ValueError(f"Error loading LinkedIn cookies: {str(e)}")
 
 
-class PlaywrightMCPServer:
-    """Playwright MCP Server with LinkedIn cookie support."""
+# Cookies are now loaded dynamically from environment variables
+# See load_linkedin_cookies() function above
+
+
+class PlaywrightLinkedInServer:
+    """Simplified Playwright server for LinkedIn scraping with automatic authentication."""
     
     def __init__(self):
-        self.server = Server("playwright-linkedin")
         self.logger = logging.getLogger(__name__)
         self.playwright = None
         self.browser: Optional[Browser] = None
-        self.contexts: Dict[str, BrowserContext] = {}
-        self.pages: Dict[str, Page] = {}
-        self._context_counter = 0
-        self._page_counter = 0
-        
-        # Register tools
-        self._register_tools()
+        self.context: Optional[BrowserContext] = None
+        self.page: Optional[Page] = None
     
-    def _register_tools(self):
-        """Register all available tools."""
+    async def initialize(self):
+        """Initialize Playwright with LinkedIn authentication."""
+        try:
+            self.playwright = await async_playwright().start()
+            
+            # Launch browser with no persistent state
+            self.browser = await self.playwright.chromium.launch(
+                headless=True,  # Set to False for debugging
+                args=[
+                    '--no-sandbox',
+                    '--disable-blink-features=AutomationControlled',
+                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    '--incognito',  # Force incognito mode
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor'
+                ]
+            )
+            
+            # Create context with LinkedIn cookies (fresh context with no persistence)
+            self.context = await self.browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                locale='en-US',
+                timezone_id='Europe/Berlin',
+                no_viewport=False,
+                ignore_https_errors=True
+            )
+            
+            # Add LinkedIn cookies
+            await self._add_linkedin_cookies()
+            
+            # Create page
+            self.page = await self.context.new_page()
+            
+            self.logger.info("✅ Playwright initialized with LinkedIn authentication")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Playwright: {str(e)}")
+            return False
+    
+    async def _add_linkedin_cookies(self):
+        """Add LinkedIn cookies to the browser context."""
+        playwright_cookies = []
         
-        @self.server.call_tool()
-        async def launch_browser(browser_type: str = "chromium", headless: bool = True, **options) -> List[TextContent]:
-            """Launch a new browser instance."""
-            try:
-                if self.playwright is None:
-                    self.playwright = await async_playwright().start()
-                
-                browser_launcher = getattr(self.playwright, browser_type)
-                self.browser = await browser_launcher.launch(headless=headless, **options)
-                
-                self.logger.info(f"Browser {browser_type} launched successfully")
-                return [TextContent(type="text", text=f"Browser {browser_type} launched")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to launch browser: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
+        # Load cookies from environment variable
+        linkedin_cookies = load_linkedin_cookies()
         
-        @self.server.call_tool()
-        async def create_context(linkedin_auth: bool = True, **options) -> List[TextContent]:
-            """Create a new browser context, optionally with LinkedIn authentication."""
-            try:
-                if not self.browser:
-                    return [TextContent(type="text", text="Error: No browser launched")]
-                
-                # Default context options
-                context_options = {
-                    "viewport": {"width": 1920, "height": 1080},
-                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    **options
-                }
-                
-                context = await self.browser.new_context(**context_options)
-                
-                # Add LinkedIn cookies if requested
-                if linkedin_auth:
-                    await self._add_linkedin_cookies(context)
-                    self.logger.info("LinkedIn authentication cookies added")
-                
-                context_id = f"context_{self._context_counter}"
-                self.contexts[context_id] = context
-                self._context_counter += 1
-                
-                return [TextContent(type="text", text=f"Context created: {context_id}")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to create context: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
+        # Debug: Log which li_at token we're using
+        for cookie in linkedin_cookies:
+            if cookie['name'] == 'li_at':
+                token_preview = cookie['value'][:20] + '...' if len(cookie['value']) > 20 else cookie['value']
+                self.logger.info(f"🔑 Using li_at token: {token_preview}")
+                break
         
-        @self.server.call_tool()
-        async def create_page(context_id: str) -> List[TextContent]:
-            """Create a new page in the specified context."""
-            try:
-                if context_id not in self.contexts:
-                    return [TextContent(type="text", text=f"Error: Context {context_id} not found")]
-                
-                context = self.contexts[context_id]
-                page = await context.new_page()
-                
-                page_id = f"page_{self._page_counter}"
-                self.pages[page_id] = page
-                self._page_counter += 1
-                
-                return [TextContent(type="text", text=f"Page created: {page_id}")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to create page: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
+        for cookie in linkedin_cookies:
+            playwright_cookie = {
+                "name": cookie["name"],
+                "value": cookie["value"],
+                "domain": cookie["domain"],
+                "path": cookie["path"],
+                "secure": cookie["secure"],
+                "httpOnly": cookie["httpOnly"]
+            }
+            
+            # Add expiration if present
+            if "expirationDate" in cookie and cookie["expirationDate"]:
+                playwright_cookie["expires"] = cookie["expirationDate"]
+            
+            # Add sameSite if present
+            if "sameSite" in cookie and cookie["sameSite"] != "unspecified":
+                if cookie["sameSite"] == "no_restriction":
+                    playwright_cookie["sameSite"] = "None"
+                else:
+                    playwright_cookie["sameSite"] = cookie["sameSite"].title()
+            
+            playwright_cookies.append(playwright_cookie)
         
-        @self.server.call_tool()
-        async def navigate(page_id: str, url: str, wait_until: str = "networkidle") -> List[TextContent]:
-            """Navigate to a URL."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                await page.goto(url, wait_until=wait_until)
-                
-                title = await page.title()
-                return [TextContent(type="text", text=f"Navigated to {url} - Title: {title}")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to navigate: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def get_page_content(page_id: str) -> List[TextContent]:
-            """Get the HTML content of a page."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                content = await page.content()
-                
-                return [TextContent(type="text", text=content)]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to get content: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def click_element(page_id: str, selector: str, timeout: int = 30000) -> List[TextContent]:
-            """Click an element on the page."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                await page.click(selector, timeout=timeout)
-                
-                return [TextContent(type="text", text=f"Clicked element: {selector}")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to click element: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def type_text(page_id: str, selector: str, text: str, timeout: int = 30000) -> List[TextContent]:
-            """Type text into an element."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                await page.fill(selector, text, timeout=timeout)
-                
-                return [TextContent(type="text", text=f"Typed text into {selector}")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to type text: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def wait_for_selector(page_id: str, selector: str, timeout: int = 30000) -> List[TextContent]:
-            """Wait for an element to appear."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                await page.wait_for_selector(selector, timeout=timeout)
-                
-                return [TextContent(type="text", text=f"Element found: {selector}")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to wait for selector: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def get_element_text(page_id: str, selector: str) -> List[TextContent]:
-            """Get text content of an element."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                text = await page.inner_text(selector)
-                
-                return [TextContent(type="text", text=text)]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to get element text: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def screenshot(page_id: str, path: Optional[str] = None, full_page: bool = False) -> List[TextContent]:
-            """Take a screenshot of the page."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                screenshot_path = path or f"/app/data/screenshot_{page_id}.png"
-                
-                await page.screenshot(path=screenshot_path, full_page=full_page)
-                
-                return [TextContent(type="text", text=f"Screenshot saved: {screenshot_path}")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to take screenshot: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def extract_linkedin_profiles(page_id: str) -> List[TextContent]:
-            """Extract LinkedIn profile information from the current page."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
-                
-                page = self.pages[page_id]
-                
-                # Extract profile data using JavaScript
-                profile_data = await page.evaluate("""
+        await self.context.add_cookies(playwright_cookies)
+        self.logger.info(f"Added {len(playwright_cookies)} LinkedIn cookies")
+    
+    async def _extract_contact_info(self) -> Dict[str, Any]:
+        """Extract contact information by clicking on 'Kontaktinfo' button."""
+        try:
+            self.logger.info("Attempting to extract contact info...")
+            
+            # Look for "Kontaktinfo" button with multiple selectors
+            contact_info_selectors = [
+                'a[data-control-name="contact_see_more"]',
+                'button[aria-label*="ontakt"]',  # Partial match for "Kontakt"
+                'a[href*="overlay/contact-info"]',
+                '.pv-contact-info__contact-type',
+                'a:has-text("Kontaktinfo")',
+                'button:has-text("Kontaktinfo")',
+                '[data-control-name*="contact"]',
+                '.pv-top-card-v2-ctas a:first-child',
+                '.pv-s-profile-actions a:first-child'
+            ]
+            
+            contact_button = None
+            for selector in contact_info_selectors:
+                try:
+                    # Try to find the element
+                    elements = await self.page.query_selector_all(selector)
+                    for element in elements:
+                        text = await element.inner_text()
+                        if 'kontakt' in text.lower():
+                            contact_button = element
+                            self.logger.info(f"Found contact button with selector: {selector}, text: {text}")
+                            break
+                    if contact_button:
+                        break
+                except:
+                    continue
+            
+            # Fallback: look for any link/button containing "kontakt"
+            if not contact_button:
+                self.logger.info("Trying fallback approach to find contact info...")
+                contact_button = await self.page.evaluate("""
                     () => {
-                        const profiles = [];
-                        
-                        // Extract from search results
-                        const profileCards = document.querySelectorAll('[data-view-name="search-entity-result"]');
-                        
-                        profileCards.forEach(card => {
-                            const nameElement = card.querySelector('a[data-test-app-aware-link] span[aria-hidden="true"]');
-                            const titleElement = card.querySelector('.entity-result__primary-subtitle');
-                            const locationElement = card.querySelector('.entity-result__secondary-subtitle');
-                            const linkElement = card.querySelector('a[data-test-app-aware-link]');
-                            
-                            if (nameElement && linkElement) {
-                                profiles.push({
-                                    name: nameElement.textContent.trim(),
-                                    title: titleElement ? titleElement.textContent.trim() : '',
-                                    location: locationElement ? locationElement.textContent.trim() : '',
-                                    profile_url: linkElement.href,
-                                    extracted_at: new Date().toISOString()
-                                });
+                        // Look for any element containing "kontakt" text
+                        const elements = document.querySelectorAll('a, button');
+                        for (const el of elements) {
+                            if (el.textContent && el.textContent.toLowerCase().includes('kontakt')) {
+                                return el;
                             }
-                        });
+                        }
+                        return null;
+                    }
+                """)
+            
+            if contact_button:
+                self.logger.info("Clicking on contact info button...")
+                
+                # Click the button
+                await contact_button.click()
+                
+                # Wait for the overlay to appear
+                await asyncio.sleep(2)
+                
+                # Wait for contact info modal/overlay
+                try:
+                    await self.page.wait_for_selector('.pv-contact-info__contact-type', timeout=5000)
+                except:
+                    # Try alternative selectors for the modal
+                    modal_selectors = [
+                        '[role="dialog"]',
+                        '.artdeco-modal',
+                        '.pv-contact-info',
+                        '.contact-info',
+                        '.overlay-content'
+                    ]
+                    for modal_selector in modal_selectors:
+                        try:
+                            await self.page.wait_for_selector(modal_selector, timeout=2000)
+                            break
+                        except:
+                            continue
+                
+                # Extract contact information from the overlay
+                contact_data = await self.page.evaluate("""
+                    () => {
+                        const contactInfo = {
+                            email: '',
+                            phone: '',
+                            website: '',
+                            other: []
+                        };
                         
-                        return profiles;
+                        // Look for contact info in modal/overlay
+                        const contactSelectors = [
+                            '.pv-contact-info__contact-type',
+                            '.contact-info-item',
+                            '.pv-contact-info__ci-container',
+                            '[role="dialog"] .contact-info',
+                            '.artdeco-modal .contact-info'
+                        ];
+                        
+                        for (const selector of contactSelectors) {
+                            const contactElements = document.querySelectorAll(selector);
+                            
+                            contactElements.forEach(element => {
+                                const text = element.textContent || '';
+                                const href = element.querySelector('a')?.href || '';
+                                
+                                // Extract email
+                                if (text.includes('@') || href.includes('mailto:')) {
+                                    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                                    if (emailMatch) {
+                                        contactInfo.email = emailMatch[0];
+                                    } else if (href.includes('mailto:')) {
+                                        contactInfo.email = href.replace('mailto:', '');
+                                    }
+                                }
+                                
+                                // Extract phone number (more restrictive validation)
+                                // Skip if this text contains linkedin.com (avoid extracting from URLs)
+                                if (!text.toLowerCase().includes('linkedin.com')) {
+                                    // Include en-dash (–), em-dash (—), and other phone characters
+                                    const phoneMatch = text.match(/[\+]?[0-9][\d\s\-–—\(\)\.]{8,}/);
+                                    if (phoneMatch && !contactInfo.phone) {
+                                        let cleanPhone = phoneMatch[0].replace(/\s+/g, ' ').trim();
+                                        cleanPhone = cleanPhone.replace(/\(\s*$/, '').trim();
+                                        
+                                        // Remove all non-digit characters for validation
+                                        const digitsOnly = cleanPhone.replace(/\D/g, '');
+                                        
+                                        // Validate: should be 9-15 digits and not look like a year/date
+                                        if (digitsOnly.length >= 9 && digitsOnly.length <= 15 && 
+                                            !digitsOnly.match(/^(19|20)\d{2}$/) &&  // Not a 4-digit year
+                                            !digitsOnly.match(/^(19|20)\d{6}$/) &&  // Not a date like 20250618
+                                            !digitsOnly.match(/^\d{4}$/) &&         // Not a 4-digit number
+                                            !digitsOnly.match(/^\d{2}$/) &&         // Not a 2-digit number
+                                            digitsOnly.indexOf('0') !== 0 || digitsOnly.length > 4) { // If starts with 0, must be longer than 4 digits
+                                            contactInfo.phone = cleanPhone;
+                                        }
+                                    }
+                                }
+                                
+                                // Extract website
+                                if (href && (href.includes('http') || href.includes('www')) && 
+                                    !href.includes('linkedin.com') && !href.includes('mailto:')) {
+                                    contactInfo.website = href;
+                                }
+                                
+                                // Store other contact info (clean up whitespace)
+                                if (text.trim() && !text.includes('Kontaktinfo')) {
+                                    const cleanText = text.replace(/\s+/g, ' ').trim();
+                                    if (cleanText && !contactInfo.other.includes(cleanText)) {
+                                        contactInfo.other.push(cleanText);
+                                    }
+                                }
+                            });
+                        }
+                        
+                        // Additional extraction from any visible links/text in modal
+                        const modal = document.querySelector('[role="dialog"], .artdeco-modal, .pv-contact-info');
+                        if (modal) {
+                            const allLinks = modal.querySelectorAll('a');
+                            allLinks.forEach(link => {
+                                const href = link.href;
+                                const text = link.textContent;
+                                
+                                if (href.includes('mailto:') && !contactInfo.email) {
+                                    contactInfo.email = href.replace('mailto:', '');
+                                } else if (href.includes('tel:') && !contactInfo.phone) {
+                                    contactInfo.phone = href.replace('tel:', '');
+                                } else if (text && text.includes('@') && !contactInfo.email) {
+                                    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                                    if (emailMatch) {
+                                        contactInfo.email = emailMatch[0];
+                                    }
+                                }
+                            });
+                        }
+                        
+                        return contactInfo;
                     }
                 """)
                 
-                return [TextContent(type="text", text=json.dumps(profile_data, indent=2))]
+                # Close the modal by pressing Escape or clicking close button
+                try:
+                    await self.page.keyboard.press('Escape')
+                    await asyncio.sleep(1)
+                except:
+                    pass
                 
-            except Exception as e:
-                self.logger.error(f"Failed to extract profiles: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def close_page(page_id: str) -> List[TextContent]:
-            """Close a page."""
-            try:
-                if page_id not in self.pages:
-                    return [TextContent(type="text", text=f"Error: Page {page_id} not found")]
+                self.logger.info(f"Extracted contact info: {contact_data}")
+                return contact_data
                 
-                page = self.pages[page_id]
-                await page.close()
-                del self.pages[page_id]
+            else:
+                self.logger.info("Contact info button not found")
+                return {}
                 
-                return [TextContent(type="text", text=f"Page {page_id} closed")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to close page: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def close_context(context_id: str) -> List[TextContent]:
-            """Close a browser context."""
-            try:
-                if context_id not in self.contexts:
-                    return [TextContent(type="text", text=f"Error: Context {context_id} not found")]
-                
-                context = self.contexts[context_id]
-                await context.close()
-                del self.contexts[context_id]
-                
-                # Clean up pages in this context
-                pages_to_remove = [pid for pid, page in self.pages.items() 
-                                 if page.context == context]
-                for pid in pages_to_remove:
-                    del self.pages[pid]
-                
-                return [TextContent(type="text", text=f"Context {context_id} closed")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to close context: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-        
-        @self.server.call_tool()
-        async def close_browser() -> List[TextContent]:
-            """Close the browser."""
-            try:
-                if self.browser:
-                    await self.browser.close()
-                    self.browser = None
-                    self.contexts.clear()
-                    self.pages.clear()
-                
-                if self.playwright:
-                    await self.playwright.stop()
-                    self.playwright = None
-                
-                return [TextContent(type="text", text="Browser closed")]
-                
-            except Exception as e:
-                self.logger.error(f"Failed to close browser: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
+        except Exception as e:
+            self.logger.error(f"Error extracting contact info: {str(e)}")
+            return {}
     
-    async def _add_linkedin_cookies(self, context: BrowserContext):
-        """Add LinkedIn authentication cookies to a context."""
+    async def navigate_to_profile(self, profile_url: str) -> Dict[str, Any]:
+        """Navigate to a LinkedIn profile and extract data."""
         try:
-            # Convert our cookie format to Playwright format
-            playwright_cookies = []
+            self.logger.info(f"🌐 Navigating to: {profile_url}")
             
-            for cookie in LINKEDIN_COOKIES:
-                playwright_cookie = {
-                    "name": cookie["name"],
-                    "value": cookie["value"],
-                    "domain": cookie["domain"],
-                    "path": cookie["path"],
-                    "secure": cookie["secure"],
-                    "httpOnly": cookie["httpOnly"]
+            # Check if we're already logged in
+            self.logger.info("📋 Checking current page and cookies...")
+            current_url = self.page.url
+            self.logger.info(f"Current URL: {current_url}")
+            
+            # Get current cookies for debugging
+            cookies = await self.context.cookies()
+            linkedin_cookies = [c for c in cookies if 'linkedin' in c['domain']]
+            self.logger.info(f"LinkedIn cookies found: {len(linkedin_cookies)}")
+            
+            # Try to navigate with more detailed logging
+            self.logger.info(f"🚀 Starting navigation to {profile_url}...")
+            
+            try:
+                # First try with a shorter timeout and domcontentloaded
+                self.logger.info(f"🌐 Attempting to navigate to: {profile_url}")
+                await self.page.goto(profile_url, wait_until='domcontentloaded', timeout=15000)
+                self.logger.info("✅ Page loaded (domcontentloaded)")
+                
+                # Wait a bit more for dynamic content
+                await asyncio.sleep(2)
+                
+                # Check if we hit a login/challenge page
+                current_url = self.page.url
+                page_title = await self.page.title()
+                self.logger.info(f"📄 Current URL after navigation: {current_url}")
+                self.logger.info(f"📄 Page title: {page_title}")
+                
+                # Take an early screenshot to see what we got
+                early_screenshot = f"data/screenshots/linkedin_early_{hash(profile_url)}.png"
+                await self.page.screenshot(path=early_screenshot)
+                self.logger.info(f"📸 Early screenshot saved: {early_screenshot}")
+                
+                # Check for LinkedIn login/challenge indicators (more specific)
+                page_content = await self.page.content()
+                
+                # Check if we can see key profile elements (more reliable than text patterns)
+                has_profile_elements = await self.page.evaluate("""
+                    () => {
+                        // Look for key LinkedIn profile page elements
+                        const profileIndicators = [
+                            'h1.text-heading-xlarge',           // Profile name
+                            '.pv-text-details__left-panel',    // Profile details panel
+                            '.pv-top-card',                     // Profile top card
+                            '[data-field="headline"]',         // Headline field
+                            '.pv-top-card-v2-ctas',           // Profile action buttons
+                            '.pv-contact-info',                 // Contact info
+                            'button[aria-label*="Nachricht"]', // German "Message" button
+                            'button[aria-label*="Kontakt"]'     // German "Contact" button
+                        ];
+                        
+                        // If we find any of these, we're on a profile page
+                        for (const selector of profileIndicators) {
+                            if (document.querySelector(selector)) {
+                                return true;
+                            }
+                        }
+                        
+                        // Also check for common profile text patterns
+                        const bodyText = document.body.textContent || '';
+                        if (bodyText.includes('Follower') || bodyText.includes('Kontakte') || 
+                            bodyText.includes('Nachricht') || bodyText.includes('Kontaktinfo')) {
+                            return true;
+                        }
+                        
+                        return false;
+                    }
+                """)
+                
+                # Only flag as login page if we have explicit login indicators AND no profile elements
+                login_indicators = [
+                    'sign in to linkedin', 'join linkedin', 'sign up', 'challenge', 
+                    'security verification', 'please sign in', 'anmelden', 'registrieren'
+                ]
+                has_login_indicators = any(indicator in page_content.lower() for indicator in login_indicators)
+                
+                if has_login_indicators and not has_profile_elements:
+                    self.logger.warning("⚠️  Detected login/challenge page!")
+                    return {
+                        "success": False,
+                        "error": "LinkedIn login/challenge page detected",
+                        "html_content": page_content,
+                        "screenshot_path": early_screenshot,
+                        "current_url": current_url,
+                        "page_title": page_title
+                    }
+                else:
+                    self.logger.info(f"✅ Profile page detected (has_profile_elements: {has_profile_elements})")
+                
+                # Wait for network to settle (with fallback)
+                self.logger.info("⏳ Waiting for network to settle...")
+                try:
+                    await self.page.wait_for_load_state('networkidle', timeout=5000)
+                    self.logger.info("✅ Network settled")
+                except:
+                    self.logger.info("⚠️  Network still active, but proceeding anyway")
+                
+            except Exception as nav_error:
+                self.logger.error(f"❌ Navigation failed: {str(nav_error)}")
+                
+                # Try to get some diagnostic info anyway
+                try:
+                    current_url = self.page.url
+                    page_title = await self.page.title()
+                    emergency_screenshot = f"data/screenshots/linkedin_error_{hash(profile_url)}.png"
+                    await self.page.screenshot(path=emergency_screenshot)
+                    
+                    return {
+                        "success": False,
+                        "error": f"Navigation timeout: {str(nav_error)}",
+                        "html_content": await self.page.content() if self.page else "",
+                        "screenshot_path": emergency_screenshot,
+                        "current_url": current_url,
+                        "page_title": page_title,
+                        "navigation_error": str(nav_error)
+                    }
+                except:
+                    return {
+                        "success": False,
+                        "error": f"Navigation failed completely: {str(nav_error)}"
+                    }
+            
+            # Wait for page to stabilize
+            await asyncio.sleep(3)
+            
+            # Take initial screenshot for debugging
+            screenshot_path = f"data/screenshots/linkedin_profile_{hash(profile_url)}.png"
+            await self.page.screenshot(path=screenshot_path)
+            
+            # Try to click on "Kontaktinfo" to get contact details
+            contact_info_data = await self._extract_contact_info()
+            
+            # Take screenshot after contact info extraction
+            contact_screenshot_path = f"data/screenshots/linkedin_contact_info_{hash(profile_url)}.png"
+            await self.page.screenshot(path=contact_screenshot_path)
+            
+            # Extract profile data
+            profile_data = await self.page.evaluate("""
+                () => {
+                    const data = {};
+                    
+                    // Debug: Log available h1 elements
+                    const allH1s = document.querySelectorAll('h1');
+                    console.log('Found H1 elements:', Array.from(allH1s).map(h1 => ({
+                        text: h1.textContent.trim(),
+                        classes: h1.className,
+                        id: h1.id
+                    })));
+                    
+                    // Extract name - LinkedIn current structure
+                    const nameSelectors = [
+                        'h1.text-heading-xlarge',
+                        '.pv-text-details__left-panel h1', 
+                        '.text-heading-xlarge',
+                        '.pv-top-card h1',
+                        'h1[class*="heading"]',
+                        'h1[class*="text-heading"]',
+                        '.pv-text-details__left-panel .text-heading-xlarge',
+                        '.pv-top-card .pv-text-details__left-panel h1',
+                        '.pv-top-card .text-heading-xlarge',
+                        '.artdeco-entity-lockup__title a',
+                        '.pv-entity__summary-info h1',
+                        'main h1',
+                        '[data-field="name"] h1',
+                        '.pv-top-card--list li:first-child'
+                    ];
+                    
+                    for (const selector of nameSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element && element.textContent.trim()) {
+                            data.full_name = element.textContent.trim();
+                            break;
+                        }
+                    }
+                    
+                    // Additional fallback - look for any h1 in the main profile area
+                    if (!data.full_name) {
+                        const allH1s = document.querySelectorAll('h1');
+                        for (const h1 of allH1s) {
+                            const text = h1.textContent.trim();
+                            // Skip if it looks like a section header or contains emoji/symbols
+                            if (text && !text.includes('•') && !text.includes('→') && 
+                                text.split(' ').length >= 2 && text.split(' ').length <= 5) {
+                                data.full_name = text;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Extract headline
+                    const headlineSelectors = [
+                        '.text-body-medium.break-words',
+                        '.pv-text-details__left-panel .text-body-medium',
+                        '[data-field="headline"]',
+                        '.pv-top-card--list li:nth-child(2)'
+                    ];
+                    
+                    for (const selector of headlineSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element && element.textContent.trim()) {
+                            data.headline = element.textContent.trim();
+                            break;
+                        }
+                    }
+                    
+                    // Extract location
+                    const locationSelectors = [
+                        '.text-body-small.inline.t-black--light.break-words',
+                        '.pv-text-details__left-panel .text-body-small',
+                        '[data-field="location"]'
+                    ];
+                    
+                    for (const selector of locationSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element && element.textContent.trim()) {
+                            data.location = element.textContent.trim();
+                            break;
+                        }
+                    }
+                    
+                    // Extract about section
+                    const aboutSelectors = [
+                        '.pv-about-section .inline-show-more-text',
+                        '[data-field="summary"]',
+                        '.pv-about__summary-text'
+                    ];
+                    
+                    for (const selector of aboutSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element && element.textContent.trim()) {
+                            data.about = element.textContent.trim();
+                            break;
+                        }
+                    }
+                    
+                    // Extract experience
+                    data.experience = [];
+                    const experienceElements = document.querySelectorAll('#experience ~ .pvs-list .pvs-entity, .experience-section .pv-entity__summary-info');
+                    experienceElements.forEach((elem, index) => {
+                        if (index < 5) { // Limit to 5 entries
+                            const text = elem.textContent.trim();
+                            if (text) data.experience.push(text);
+                        }
+                    });
+                    
+                    // Extract education
+                    data.education = [];
+                    const educationElements = document.querySelectorAll('#education ~ .pvs-list .pvs-entity, .education-section .pv-entity__summary-info');
+                    educationElements.forEach((elem, index) => {
+                        if (index < 3) { // Limit to 3 entries
+                            const text = elem.textContent.trim();
+                            if (text) data.education.push(text);
+                        }
+                    });
+                    
+                    // Extract skills
+                    data.skills = [];
+                    const skillElements = document.querySelectorAll('#skills ~ .pvs-list .pvs-entity__path, .skills-section .pv-skill-category-entity__name span');
+                    skillElements.forEach((elem, index) => {
+                        if (index < 10) { // Limit to 10 skills
+                            const text = elem.textContent.trim();
+                            if (text) data.skills.push(text);
+                        }
+                    });
+                    
+                    // Extract connections count
+                    const connectionsSelectors = [
+                        '.t-black--light.t-normal',
+                        '.pv-top-card--list-bullet li',
+                        '[data-field="connections"]'
+                    ];
+                    
+                    for (const selector of connectionsSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element && element.textContent.includes('connection')) {
+                            data.connections_count = element.textContent.trim();
+                            break;
+                        }
+                    }
+                    
+                    // Current position (try to extract from headline or experience)
+                    if (data.headline) {
+                        data.current_position = data.headline;
+                    } else if (data.experience && data.experience.length > 0) {
+                        data.current_position = data.experience[0];
+                    }
+                    
+                    // Get page title for verification
+                    data.page_title = document.title;
+                    
+                    return data;
                 }
-                
-                # Add expiration if present
-                if "expirationDate" in cookie and cookie["expirationDate"]:
-                    playwright_cookie["expires"] = cookie["expirationDate"]
-                
-                # Add sameSite if present
-                if "sameSite" in cookie and cookie["sameSite"] != "unspecified":
-                    if cookie["sameSite"] == "no_restriction":
-                        playwright_cookie["sameSite"] = "None"
-                    else:
-                        playwright_cookie["sameSite"] = cookie["sameSite"].title()
-                
-                playwright_cookies.append(playwright_cookie)
+            """)
             
-            # Add cookies to the context
-            await context.add_cookies(playwright_cookies)
-            self.logger.info(f"Added {len(playwright_cookies)} LinkedIn cookies")
+            # Merge contact info into profile data
+            if contact_info_data:
+                profile_data['contact_email'] = contact_info_data.get('email', '')
+                profile_data['contact_phone'] = contact_info_data.get('phone', '')
+                profile_data['contact_website'] = contact_info_data.get('website', '')
+                profile_data['contact_other'] = contact_info_data.get('other', [])
+            
+            # Get page content as backup
+            html_content = await self.page.content()
+            
+            return {
+                "success": True,
+                "extracted_data": profile_data,
+                "html_content": html_content,
+                "screenshot_path": screenshot_path,
+                "contact_screenshot_path": contact_screenshot_path,
+                "contact_info": contact_info_data,
+                "page_title": await self.page.title()
+            }
             
         except Exception as e:
-            self.logger.error(f"Failed to add LinkedIn cookies: {str(e)}")
-            raise
+            self.logger.error(f"Error navigating to profile {profile_url}: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "html_content": await self.page.content() if self.page else "",
+                "screenshot_path": None
+            }
     
-    def get_available_tools(self) -> List[Tool]:
-        """Get list of available tools."""
-        return [
-            Tool(
-                name="launch_browser",
-                description="Launch a new browser instance",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "browser_type": {
-                            "type": "string",
-                            "enum": ["chromium", "firefox", "webkit"],
-                            "default": "chromium"
-                        },
-                        "headless": {"type": "boolean", "default": True}
-                    }
-                }
-            ),
-            Tool(
-                name="create_context",
-                description="Create a new browser context with optional LinkedIn authentication",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "linkedin_auth": {
-                            "type": "boolean",
-                            "default": True,
-                            "description": "Automatically add LinkedIn authentication cookies"
-                        }
-                    }
-                }
-            ),
-            Tool(
-                name="create_page",
-                description="Create a new page in a context",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "context_id": {"type": "string"}
-                    },
-                    "required": ["context_id"]
-                }
-            ),
-            Tool(
-                name="navigate",
-                description="Navigate to a URL",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "page_id": {"type": "string"},
-                        "url": {"type": "string"},
-                        "wait_until": {
-                            "type": "string",
-                            "enum": ["load", "domcontentloaded", "networkidle"],
-                            "default": "networkidle"
-                        }
-                    },
-                    "required": ["page_id", "url"]
-                }
-            ),
-            Tool(
-                name="extract_linkedin_profiles",
-                description="Extract LinkedIn profile information from search results",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "page_id": {"type": "string"}
-                    },
-                    "required": ["page_id"]
-                }
-            ),
-            Tool(
-                name="screenshot",
-                description="Take a screenshot of the page",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "page_id": {"type": "string"},
-                        "path": {"type": "string"},
-                        "full_page": {"type": "boolean", "default": False}
-                    },
-                    "required": ["page_id"]
-                }
-            ),
-            Tool(
-                name="close_browser",
-                description="Close the browser and clean up resources",
-                inputSchema={"type": "object", "properties": {}}
-            )
-        ]
+    async def cleanup(self):
+        """Clean up browser resources."""
+        try:
+            if self.page:
+                await self.page.close()
+            if self.context:
+                await self.context.close()
+            if self.browser:
+                await self.browser.close()
+            if self.playwright:
+                await self.playwright.stop()
+            
+            self.logger.info("✅ Playwright cleanup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error during cleanup: {str(e)}")
+
+
+async def handle_command(command: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle a single command."""
+    action = command.get("action")
+    args = command.get("args", {})
     
-    async def run(self):
-        """Run the MCP server."""
-        # Register the list_tools handler
-        @self.server.list_tools()
-        async def list_tools() -> List[Tool]:
-            return self.get_available_tools()
+    if action == "scrape_profile":
+        profile_url = args.get("profile_url")
+        if not profile_url:
+            return {"error": "profile_url is required"}
         
-        # Start the server
-        async with self.server.stdio() as streams:
-            await self.server.run(
-                streams[0], streams[1], 
-                self.server.create_initialization_options()
-            )
+        server = PlaywrightLinkedInServer()
+        try:
+            # Add server-level timeout (80 seconds total)
+            async def scrape_with_timeout():
+                if await server.initialize():
+                    return await server.navigate_to_profile(profile_url)
+                else:
+                    return {"error": "Failed to initialize Playwright"}
+            
+            result = await asyncio.wait_for(scrape_with_timeout(), timeout=80.0)
+            return result
+            
+        except asyncio.TimeoutError:
+            return {
+                "success": False,
+                "error": "Server-level timeout after 80 seconds",
+                "profile_url": profile_url
+            }
+        finally:
+            await server.cleanup()
+    
+    elif action == "health_check":
+        return {"success": True, "status": "Playwright LinkedIn server is running"}
+    
+    else:
+        return {"error": f"Unknown action: {action}"}
+
+
+async def main():
+    """Main server loop - reads JSON commands from stdin."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stderr)]
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info("🎭 Starting Playwright LinkedIn Server...")
+    
+    try:
+        while True:
+            # Read command from stdin
+            line = sys.stdin.readline()
+            if not line:
+                break
+            
+            try:
+                command = json.loads(line.strip())
+                result = await handle_command(command)
+                
+                # Write result to stdout
+                print(json.dumps(result))
+                sys.stdout.flush()
+                
+            except json.JSONDecodeError as e:
+                error_result = {"error": f"Invalid JSON: {str(e)}"}
+                print(json.dumps(error_result))
+                sys.stdout.flush()
+            except Exception as e:
+                error_result = {"error": f"Command error: {str(e)}"}
+                print(json.dumps(error_result))
+                sys.stdout.flush()
+                
+    except KeyboardInterrupt:
+        logger.info("Server interrupted by user")
+    except Exception as e:
+        logger.error(f"Server error: {str(e)}")
+    
+    logger.info("🎭 Playwright LinkedIn Server stopped")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
