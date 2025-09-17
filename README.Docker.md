@@ -1,6 +1,6 @@
-# 🐳 Docker Setup for LinkedIn-CRM AI Sync
+# 🐳 Docker Setup for LinkedIn-CRM AI Sync with Web Interface
 
-This document provides instructions for running the LinkedIn-CRM synchronization system using Docker.
+This document provides complete instructions for running the LinkedIn-CRM AI synchronization system with web interface using Docker.
 
 ## 🚀 Quick Start
 
@@ -8,8 +8,9 @@ This document provides instructions for running the LinkedIn-CRM synchronization
 
 - Docker Engine 20.10+
 - Docker Compose 2.0+
-- At least 16GB free disk space (for AI models)
-- 8GB+ RAM recommended
+- **Ollama running on host** with mistral-small:24b model
+- At least 2GB free disk space (for application data)
+- 4GB+ RAM recommended
 
 ### 2. Environment Setup
 
@@ -31,28 +32,68 @@ DYNAMICS_CLIENT_ID=your_client_id_here
 DYNAMICS_CLIENT_SECRET=your_client_secret_here
 DYNAMICS_CRM_URL=https://your-org.crm4.dynamics.com
 
-# AI Configuration (pre-configured for Docker)
+# AI Configuration (connects to host Ollama server)
 OLLAMA_MODEL=mistral-small:24b
-OLLAMA_HOST=http://ollama:11434
+OLLAMA_HOST=http://host.docker.internal:11434
 OPENAI_API_KEY=ollama
+
+# Web Interface Configuration (pre-configured for Docker)
+WEB_HOST=0.0.0.0
+WEB_PORT=19000
+DATABASE_URL=sqlite:///data/duplicates.db
 ```
 
-### 3. Start the System
+### 3. Setup Host Ollama (Required)
+
+Ensure Ollama is running on your host system:
 
 ```bash
-# Build and start all services
+# Install Ollama (if not already installed)
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Start Ollama server
+ollama serve
+
+# Download required model (in another terminal)
+ollama pull mistral-small:24b
+
+# Verify Ollama is accessible
+curl http://localhost:11434/api/tags
+```
+
+### 4. Start the System
+
+```bash
+# Option 1: Using Make commands (recommended)
+make up          # Start all services
+make logs        # View logs
+make status      # Check status
+
+# Option 2: Using docker-compose directly
 docker-compose up -d
-
-# View logs
 docker-compose logs -f
-
-# Check status
 docker-compose ps
 ```
 
+### 5. Access the Web Interface
+
+Once the services are running, access the web interface:
+
+- **🌐 Web Dashboard**: http://localhost:19000
+- **📊 Duplicates Management**: http://localhost:19000/duplicates
+- **📖 API Documentation**: http://localhost:19000/docs
+- **🔧 Health Check**: http://localhost:19000/api/health
+
+The web interface provides:
+- Interactive dashboard with statistics
+- Side-by-side duplicate contact comparison
+- One-click CRM updates with field selection
+- Mobile-responsive design
+- Real-time session tracking
+
 ## 🏗️ Architecture
 
-The Docker setup includes three services:
+The Docker setup includes one main service that connects to host Ollama:
 
 ### 📱 `linkedin-sync` 
 - Main application container
@@ -64,15 +105,11 @@ The Docker setup includes three services:
   - Microsoft Dynamics CRM MCP Server (port 8002)
   - Official Playwright MCP Server (port 8003)
 
-### 🤖 `ollama`
-- Ollama AI model server
+### 🧠 Host Ollama Server
+- Ollama running on host system (not in container)
 - Hosts mistral-small:24b model
-- Accessible on port 11434
-
-### 📥 `model-downloader`
-- One-time service to download AI model
-- Automatically downloads mistral-small:24b (~14GB)
-- Exits after successful download
+- Accessible via `host.docker.internal:11434`
+- Container connects to host Ollama for AI processing
 
 ## 🎮 Usage Commands
 

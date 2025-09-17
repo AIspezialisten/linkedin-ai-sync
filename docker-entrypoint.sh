@@ -13,11 +13,12 @@ if [ -z "$DYNAMICS_CLIENT_SECRET" ]; then
     echo "⚠️  Warning: DYNAMICS_CLIENT_SECRET not set"
 fi
 
-# Wait for Ollama to be ready
+# Wait for Ollama to be ready (on host)
 echo "🔍 Checking Ollama connection..."
+OLLAMA_URL="${OLLAMA_HOST:-http://localhost:11434}"
 for i in {1..30}; do
-    if curl -s http://ollama:11434/api/tags > /dev/null 2>&1; then
-        echo "✅ Ollama is ready!"
+    if curl -s "${OLLAMA_URL}/api/tags" > /dev/null 2>&1; then
+        echo "✅ Ollama is ready at ${OLLAMA_URL}!"
         break
     fi
     echo "⏳ Waiting for Ollama... ($i/30)"
@@ -26,11 +27,11 @@ done
 
 # Check if mistral-small:24b model is available
 echo "🤖 Checking AI model availability..."
-if curl -s http://ollama:11434/api/tags | grep -q "mistral-small:24b"; then
+if curl -s "${OLLAMA_URL}/api/tags" | grep -q "mistral-small:24b"; then
     echo "✅ mistral-small:24b model is available!"
 else
-    echo "⚠️  mistral-small:24b model not found. It may still be downloading."
-    echo "    You can check progress with: docker-compose logs model-downloader"
+    echo "⚠️  mistral-small:24b model not found. Please ensure it's installed on the host:"
+    echo "    ollama pull mistral-small:24b"
 fi
 
 # Start MCP Server Manager in background

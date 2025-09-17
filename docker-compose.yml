@@ -1,107 +1,44 @@
-version: '3.8'
-
 services:
-  # Main LinkedIn-CRM sync application
+  # Main LinkedIn-CRM sync application with web interface
   linkedin-sync:
     build: .
     container_name: linkedin-ai-sync
+    network_mode: host
     environment:
       # LinkedIn API Configuration
       - LINKEDIN_ACCESS_TOKEN=${LINKEDIN_ACCESS_TOKEN}
-      
-      # Microsoft Dynamics CRM Configuration  
+
+      # Microsoft Dynamics CRM Configuration
       - DYNAMICS_TENANT_ID=${DYNAMICS_TENANT_ID}
       - DYNAMICS_CLIENT_ID=${DYNAMICS_CLIENT_ID}
       - DYNAMICS_CLIENT_SECRET=${DYNAMICS_CLIENT_SECRET}
       - DYNAMICS_CRM_URL=${DYNAMICS_CRM_URL}
-      
-      # AI Configuration (point to ollama container)
-      - OLLAMA_MODEL=mistral-small:24b
-      - OLLAMA_HOST=http://ollama:11434
+
+      # AI Configuration (connect to host Ollama server via localhost)
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral-small:24b}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost:11434}
       - OPENAI_API_KEY=ollama
-      
+
+      # Web Interface Configuration
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=19000
+      - DATABASE_URL=sqlite:///data/duplicates.db
+
       # MCP Server Configuration
       - MCP_LINKEDIN_PORT=8001
       - MCP_DYNAMICS_PORT=8002
       - MCP_PLAYWRIGHT_PORT=8003
-    ports:
-      # Expose MCP server ports
-      - "8001:8001"  # LinkedIn MCP Server
-      - "8002:8002"  # Dynamics CRM MCP Server
-      - "8003:8003"  # Playwright MCP Server
-      - "8000:8000"  # Main application port
-    depends_on:
-      ollama:
-        condition: service_healthy
-    networks:
-      - linkedin-sync-network
     volumes:
       # Mount for development (optional - comment out for production)
       - .:/app
-      # Persistent storage for logs and results
+      # Persistent storage for logs, database, and results
       - linkedin-sync-data:/app/data
-    # Keep container running for interactive use
+    # Start web interface by default
     stdin_open: true
     tty: true
-    command: tail -f /dev/null
-
-  # Ollama AI model server
-  ollama:
-    image: ollama/ollama:latest
-    container_name: linkedin-ai-ollama
-    environment:
-      - OLLAMA_ORIGINS=*
-      - OLLAMA_HOST=0.0.0.0
-    ports:
-      - "11434:11434"
-    volumes:
-      # Persistent storage for Ollama models
-      - ollama-data:/root/.ollama
-    networks:
-      - linkedin-sync-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    # Auto-restart if container fails
-    restart: unless-stopped
-
-  # Model downloader service (runs once to download mistral-small:24b)
-  model-downloader:
-    image: ollama/ollama:latest
-    container_name: linkedin-ai-model-downloader
-    depends_on:
-      ollama:
-        condition: service_healthy
-    networks:
-      - linkedin-sync-network
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-    volumes:
-      - ollama-data:/root/.ollama
-    command: >
-      sh -c "
-        echo 'Waiting for Ollama to be ready...' &&
-        sleep 10 &&
-        echo 'Downloading mistral-small:24b model...' &&
-        ollama pull mistral-small:24b &&
-        echo 'Model download complete!' &&
-        exit 0
-      "
-    restart: "no"
-
-networks:
-  linkedin-sync-network:
-    driver: bridge
-    name: linkedin-sync-network
+    command: uv run linkedin-web
 
 volumes:
-  # Persistent storage for Ollama models (large - up to 15GB for mistral-small:24b)
-  ollama-data:
-    name: linkedin-sync-ollama-data
-  
-  # Persistent storage for application data
+  # Persistent storage for application data (database, logs, results)
   linkedin-sync-data:
     name: linkedin-sync-app-data
